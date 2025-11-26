@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:ai_playground/view_model/face_recognition_model.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -43,6 +45,30 @@ class _FaceRecognitionPageState extends State<FaceRecognitionPage> {
             children: [
               Consumer<FaceRecognitionModel>(
                   builder: (context, viewModel, child) {
+                // Show cropped face image if available
+                if (viewModel.croppedFaceImagePath != null) {
+                  return Column(
+                    children: [
+                      Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: darkPinkColor, width: 2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(viewModel.croppedFaceImagePath!),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 15),
+                    ],
+                  );
+                }
+
                 if (viewModel.personDetected != null) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 15.0),
@@ -109,7 +135,12 @@ class _FaceRecognitionPageState extends State<FaceRecognitionPage> {
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 18),
                       ),
-                      const CircularProgressIndicator(color: darkPinkColor),
+                      const SizedBox(height: 10),
+                      // Show checkmark if success message, otherwise show loading spinner
+                      if (viewModel.loadingMessage!.contains("successfully"))
+                        Icon(Icons.check_circle, color: Colors.green, size: 40)
+                      else
+                        const CircularProgressIndicator(color: darkPinkColor),
                       const SizedBox(height: 20),
                     ],
                   );

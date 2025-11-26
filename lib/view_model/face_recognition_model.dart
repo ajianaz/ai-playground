@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../model/face_model.dart';
@@ -22,6 +23,7 @@ class FaceRecognitionModel extends ChangeNotifier {
   String? loadingMessage;
   String? personDetected;
   String? errorMessage;
+  String? croppedFaceImagePath;
 
   // Face detector instance
   late final FaceDetector _faceDetector;
@@ -62,6 +64,7 @@ class FaceRecognitionModel extends ChangeNotifier {
     loadingMessage = null;
     errorMessage = null;
     personDetected = null;
+    croppedFaceImagePath = null;
     notifyListeners();
   }
 
@@ -88,7 +91,8 @@ class FaceRecognitionModel extends ChangeNotifier {
       final ImagePicker picker = ImagePicker();
       final XFile? imageFile = await picker.pickImage(source: source);
       if (imageFile != null) {
-        final Float32List processedImage = await preprocessImage(imageFile);
+        final Float32List processedImage =
+            await preprocessImageWithFaceCrop(imageFile);
         final Float32List? outputVector = await runModel(processedImage);
         if (outputVector != null) {
           FaceModel faceModel = FaceModel(name: name, faceData: outputVector);
@@ -123,7 +127,8 @@ class FaceRecognitionModel extends ChangeNotifier {
       final ImagePicker picker = ImagePicker();
       final XFile? imageFile = await picker.pickImage(source: source);
       if (imageFile != null) {
-        final Float32List processedImage = await preprocessImage(imageFile);
+        final Float32List processedImage =
+            await preprocessImageWithFaceCrop(imageFile);
         final Float32List? outputVector = await runModel(processedImage);
         if (outputVector != null) {
           personDetected = recognizeFace(outputVector, knownFaces, threshold);
@@ -139,7 +144,7 @@ class FaceRecognitionModel extends ChangeNotifier {
     }
   }
 
-  Future<Float32List> preprocessImage(XFile imageFile) async {
+  Future<Float32List> preprocessImageWithFaceCrop(XFile imageFile) async {
     final File file = File(imageFile.path);
     final Uint8List imageBytes = await file.readAsBytes();
 
@@ -203,6 +208,16 @@ class FaceRecognitionModel extends ChangeNotifier {
       throw Exception("Failed to crop face from image");
     }
 
+    // Save the cropped face image for display in UI
+    try {
+      final croppedFaceFile = await _saveCroppedFaceImage(faceImage);
+      croppedFaceImagePath = croppedFaceFile.path;
+      notifyListeners();
+    } catch (e) {
+      log("Error saving cropped face image: $e");
+      // Continue even if saving fails
+    }
+
     // Resize the face image to 112x112
     img.Image resizedImage = img.copyResize(faceImage, width: 112, height: 112);
 
@@ -220,6 +235,20 @@ class FaceRecognitionModel extends ChangeNotifier {
     }
 
     return processedImage;
+  }
+
+  // Helper method to save cropped face image
+  Future<File> _saveCroppedFaceImage(img.Image faceImage) async {
+    final directory = await getTemporaryDirectory();
+    final String fileName =
+        'cropped_face_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final File file = File('${directory.path}/$fileName');
+
+    // Convert image to bytes and save
+    final Uint8List imageBytes = img.encodeJpg(faceImage, quality: 90);
+    await file.writeAsBytes(imageBytes);
+
+    return file;
   }
 
   // Helper method to convert XFile to InputImage
