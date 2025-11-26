@@ -46,22 +46,59 @@ class _FaceRecognitionPageState extends State<FaceRecognitionPage> {
                 if (viewModel.personDetected != null) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 15.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Column(
                       children: [
-                        const Text(
-                          "Detected Person: ",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 18),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              "Detected Person: ",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 18),
+                            ),
+                            Text(
+                              viewModel.personDetected!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.w500),
+                            ),
+                          ],
                         ),
-                        Text(
-                          viewModel.personDetected!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w500),
-                        ),
+                        const SizedBox(height: 10),
                       ],
                     ),
+                  );
+                }
+                if (viewModel.errorMessage != null) {
+                  return Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          border: Border.all(color: Colors.red.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.error,
+                                color: Colors.red.shade700, size: 24),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                viewModel.errorMessage!,
+                                textAlign: TextAlign.left,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.red.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                   );
                 }
                 if (viewModel.loadingMessage != null) {

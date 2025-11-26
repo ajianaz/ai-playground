@@ -1,9 +1,12 @@
 import 'dart:developer';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:ai_playground/util/sqlite_helper.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
@@ -18,13 +21,47 @@ class FaceRecognitionModel extends ChangeNotifier {
   SqliteHelper sqliteHelper = SqliteHelper();
   String? loadingMessage;
   String? personDetected;
+  String? errorMessage;
+
+  // Face detector instance
+  late final FaceDetector _faceDetector;
 
   FaceRecognitionModel() {
+    // Initialize face detector with tracking enabled
+    final options = FaceDetectorOptions(
+      enableClassification: true,
+      enableLandmarks: true,
+      enableContours: false,
+      enableTracking: true,
+      minFaceSize: 0.1,
+      performanceMode: FaceDetectorMode.accurate,
+    );
+    _faceDetector = FaceDetector(options: options);
+
     loadModel();
   }
 
   void setLoadingMessage(String? value) {
     loadingMessage = value;
+    notifyListeners();
+  }
+
+  void setErrorMessage(String? value) {
+    errorMessage = value;
+    notifyListeners();
+  }
+
+  void clearMessages() {
+    loadingMessage = null;
+    errorMessage = null;
+    // Don't clear personDetected here as we want to keep the recognition result
+    notifyListeners();
+  }
+
+  void clearAllMessages() {
+    loadingMessage = null;
+    errorMessage = null;
+    personDetected = null;
     notifyListeners();
   }
 
@@ -45,43 +82,60 @@ class FaceRecognitionModel extends ChangeNotifier {
   }
 
   Future<void> saveImage(String name, ImageSource source) async {
-    personDetected = null;
+    clearAllMessages();
     setLoadingMessage("Saving image data to the database\nPlease wait...");
-    final ImagePicker picker = ImagePicker();
-    final XFile? imageFile = await picker.pickImage(source: source);
-    if (imageFile != null) {
-      final Float32List processedImage = await preprocessImage(imageFile);
-      final Float32List? outputVector = await runModel(processedImage);
-      if (outputVector != null) {
-        FaceModel faceModel = FaceModel(name: name, faceData: outputVector);
-        await sqliteHelper.add(faceModel);
-        knownFaces.add(faceModel);
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? imageFile = await picker.pickImage(source: source);
+      if (imageFile != null) {
+        final Float32List processedImage = await preprocessImage(imageFile);
+        final Float32List? outputVector = await runModel(processedImage);
+        if (outputVector != null) {
+          FaceModel faceModel = FaceModel(name: name, faceData: outputVector);
+          await sqliteHelper.add(faceModel);
+          knownFaces.add(faceModel);
+          setLoadingMessage("Image saved successfully for $name");
+        }
+      } else {
+        setErrorMessage("No image selected");
       }
+    } catch (e) {
+      setErrorMessage("Error: ${e.toString()}");
     }
-    var list = await sqliteHelper.readAll();
-    log(list.toString());
-    setLoadingMessage(null);
   }
 
   Future<void> deleteAllData() async {
+    clearAllMessages();
     setLoadingMessage("Deleting data...Please wait");
-    personDetected = null;
-    await sqliteHelper.clear();
-    setLoadingMessage(null);
+    try {
+      await sqliteHelper.clear();
+      setLoadingMessage("All data deleted successfully");
+    } catch (e) {
+      setErrorMessage("Error deleting data: ${e.toString()}");
+    }
   }
 
   // Pick image from camera or gallery and process it
   Future<void> processImage(ImageSource source) async {
-    personDetected = null;
-    final ImagePicker picker = ImagePicker();
-    final XFile? imageFile = await picker.pickImage(source: source);
-    if (imageFile != null) {
-      final Float32List processedImage = await preprocessImage(imageFile);
-      final Float32List? outputVector = await runModel(processedImage);
-      if (outputVector != null) {
-        personDetected = recognizeFace(outputVector, knownFaces, threshold);
-        notifyListeners();
+    clearAllMessages();
+    setLoadingMessage("Processing image...\nPlease wait...");
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? imageFile = await picker.pickImage(source: source);
+      if (imageFile != null) {
+        final Float32List processedImage = await preprocessImage(imageFile);
+        final Float32List? outputVector = await runModel(processedImage);
+        if (outputVector != null) {
+          personDetected = recognizeFace(outputVector, knownFaces, threshold);
+          notifyListeners();
+        }
+      } else {
+        setErrorMessage("No image selected");
       }
+    } catch (e) {
+      setErrorMessage("Error: ${e.toString()}");
+    } finally {
+      setLoadingMessage(null);
     }
   }
 
@@ -92,22 +146,89 @@ class FaceRecognitionModel extends ChangeNotifier {
     img.Image? originalImage = img.decodeImage(imageBytes);
     if (originalImage == null) throw Exception("Failed to decode image.");
 
-    img.Image resizedImage =
-        img.copyResize(originalImage, width: 112, height: 112);
+    // Convert image to InputImage format for ML Kit
+    final inputImage = _convertToInputImage(imageFile);
 
-    Float32List inputImage = Float32List(112 * 112 * 3);
+    // Perform face detection
+    final List<Face> faces = await _faceDetector.processImage(inputImage);
+
+    // Validate face detection results
+    if (faces.isEmpty) {
+      throw Exception("No face detected in image");
+    }
+
+    if (faces.length > 1) {
+      throw Exception("Multiple faces detected. Only one face is allowed");
+    }
+
+    // Get the first detected face
+    final Face face = faces.first;
+    final ui.Rect boundingBox = face.boundingBox;
+
+    // Validate and adjust bounding box coordinates
+    final int imageWidth = originalImage.width;
+    final int imageHeight = originalImage.height;
+
+    // Convert ML Kit coordinates to image coordinates
+    // ML Kit uses normalized coordinates (0.0 to 1.0)
+    final int x =
+        (boundingBox.left * imageWidth).round().clamp(0, imageWidth - 1);
+    final int y =
+        (boundingBox.top * imageHeight).round().clamp(0, imageHeight - 1);
+    final int width =
+        (boundingBox.width * imageWidth).round().clamp(1, imageWidth - x);
+    final int height =
+        (boundingBox.height * imageHeight).round().clamp(1, imageHeight - y);
+
+    // Validate crop coordinates before cropping
+    if (x < 0 || y < 0 || x + width > imageWidth || y + height > imageHeight) {
+      throw Exception("Face bounding box is outside image boundaries");
+    }
+
+    // Crop the face region
+    img.Image? faceImage;
+    try {
+      faceImage = img.copyCrop(
+        originalImage,
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+      );
+    } catch (e) {
+      throw Exception("Failed to crop face region: ${e.toString()}");
+    }
+
+    if (faceImage == null) {
+      throw Exception("Failed to crop face from image");
+    }
+
+    // Resize the face image to 112x112
+    img.Image resizedImage = img.copyResize(faceImage, width: 112, height: 112);
+
+    // Convert to Float32List for model input
+    Float32List processedImage = Float32List(112 * 112 * 3);
     int pixelIndex = 0;
 
     for (int y = 0; y < 112; y++) {
       for (int x = 0; x < 112; x++) {
         img.Pixel pixel = resizedImage.getPixel(x, y);
-        inputImage[pixelIndex++] = pixel.r.toInt() / 255.0;
-        inputImage[pixelIndex++] = pixel.g.toInt() / 255.0;
-        inputImage[pixelIndex++] = pixel.b.toInt() / 255.0;
+        processedImage[pixelIndex++] = pixel.r.toInt() / 255.0;
+        processedImage[pixelIndex++] = pixel.g.toInt() / 255.0;
+        processedImage[pixelIndex++] = pixel.b.toInt() / 255.0;
       }
     }
 
-    return inputImage;
+    return processedImage;
+  }
+
+  // Helper method to convert XFile to InputImage
+  InputImage _convertToInputImage(XFile imageFile) {
+    final path = imageFile.path;
+    final file = File(path);
+
+    // Create InputImage from file path
+    return InputImage.fromFilePath(path);
   }
 
   Float32List normalizeEmbedding(Float32List embedding) {
@@ -158,5 +279,13 @@ class FaceRecognitionModel extends ChangeNotifier {
       }
     }
     return recognizedLabel;
+  }
+
+  // Dispose method to clean up resources
+  @override
+  void dispose() {
+    _faceDetector.close();
+    _interpreter?.close();
+    super.dispose();
   }
 }
