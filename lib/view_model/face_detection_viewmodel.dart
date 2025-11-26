@@ -1,10 +1,18 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image_picker/image_picker.dart';
 
 class FaceDetectionModel extends ChangeNotifier {
   int? count;
   bool isLoading = false;
+  String? imagePath;
+  List<Face> faces = [];
+  Size? imageSize;
+  InputImageRotation? imageRotation;
   final FaceDetector faceDetector =
       FaceDetector(options: FaceDetectorOptions(enableTracking: true));
 
@@ -18,22 +26,42 @@ class FaceDetectionModel extends ChangeNotifier {
 
   Future<void> detectFaces(XFile? imageFile) async {
     if (imageFile == null) return;
+
+    // Store the image path
+    imagePath = imageFile.path;
+
+    // Get image size
+    final File image = File(imageFile.path);
+    final Uint8List bytes = await image.readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    imageSize =
+        Size(frame.image.width.toDouble(), frame.image.height.toDouble());
+
+    // Determine image rotation (for simplicity, we'll assume no rotation)
+    imageRotation = InputImageRotation.rotation0deg;
+
     final inputImage = InputImage.fromFilePath(imageFile.path);
-    final List<Face> faces = await faceDetector.processImage(inputImage);
+    final List<Face> detectedFaces =
+        await faceDetector.processImage(inputImage);
+
+    // Store the detected faces
+    faces = detectedFaces;
     count = faces.length;
     notifyListeners();
-    // Handle the detected faces
-    // for (Face face in faces) {
-    //   // Get the bounding box of the face
-    //   final Rect boundingBox = face.boundingBox;
-
-    //   // You can also get other properties of the face, such as landmarks
-    //   // Example: final FaceLandmark leftEye = face.landmarks[FaceLandmarkType.leftEye];
-    // }
   }
 
   void setLoading(bool value) {
     isLoading = value;
+    notifyListeners();
+  }
+
+  void reset() {
+    imagePath = null;
+    faces = [];
+    count = null;
+    imageSize = null;
+    imageRotation = null;
     notifyListeners();
   }
 }
