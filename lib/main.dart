@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'view_model/emotion_detection_model.dart';
 import 'view_model/face_detection_viewmodel.dart';
 import 'view_model/face_recognition_model.dart';
+import 'view_model/live_camera_face_detection_model.dart';
 
 void main() {
   runApp(const MyApp());
@@ -22,6 +23,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => FaceDetectionModel()),
         ChangeNotifierProvider(create: (_) => FaceRecognitionModel()),
         ChangeNotifierProvider(create: (_) => EmotionDetectionModel()),
+        ChangeNotifierProvider(create: (_) => LiveCameraFaceDetectionModel()),
       ],
       child: MaterialApp(
         title: 'AI Playground',

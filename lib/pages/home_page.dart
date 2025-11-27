@@ -5,6 +5,7 @@ import '../util/colors.dart';
 import 'emotion_detection_page.dart';
 import 'face_detection_page.dart';
 import 'face_recognition_page.dart';
+import 'live_camera_face_detection_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -39,6 +40,11 @@ class HomePage extends StatelessWidget {
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => const FaceRecognitionPage())),
                   child: const HomeButton(text: "Face recognition")),
+              const SizedBox(height: 10),
+              InkWell(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const LiveCameraFaceDetectionPage())),
+                  child: const HomeButton(text: "Live Camera Face Detection")),
               const SizedBox(height: 10),
               InkWell(
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
