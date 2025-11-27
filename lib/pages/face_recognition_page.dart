@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:ai_playground/view_model/face_recognition_model.dart';
@@ -47,6 +48,7 @@ class _FaceRecognitionPageState extends State<FaceRecognitionPage> {
                   builder: (context, viewModel, child) {
                 // Show cropped face image if available
                 if (viewModel.croppedFaceImagePath != null) {
+                  log("Displaying cropped face: ${viewModel.croppedFaceImagePath}");
                   return Column(
                     children: [
                       Container(
@@ -61,6 +63,13 @@ class _FaceRecognitionPageState extends State<FaceRecognitionPage> {
                           child: Image.file(
                             File(viewModel.croppedFaceImagePath!),
                             fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              log("Error loading image: $error");
+                              return Container(
+                                color: Colors.grey,
+                                child: const Icon(Icons.error, color: Colors.red),
+                              );
+                            },
                           ),
                         ),
                       ),

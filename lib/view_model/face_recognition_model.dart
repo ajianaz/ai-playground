@@ -1,7 +1,6 @@
 import 'dart:developer';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:ai_playground/util/sqlite_helper.dart';
@@ -17,7 +16,7 @@ import '../model/face_model.dart';
 class FaceRecognitionModel extends ChangeNotifier {
   final String modelName = 'assets/mobilefacenet.tflite';
   Interpreter? _interpreter;
-  double threshold = 0.9;
+  double threshold = 0.5;
   List<FaceModel> knownFaces = [];
   SqliteHelper sqliteHelper = SqliteHelper();
   String? loadingMessage;
@@ -174,16 +173,25 @@ class FaceRecognitionModel extends ChangeNotifier {
     final int imageWidth = originalImage.width;
     final int imageHeight = originalImage.height;
 
-    // Convert ML Kit coordinates to image coordinates
-    // ML Kit uses normalized coordinates (0.0 to 1.0)
-    final int x =
-        (boundingBox.left * imageWidth).round().clamp(0, imageWidth - 1);
-    final int y =
-        (boundingBox.top * imageHeight).round().clamp(0, imageHeight - 1);
-    final int width =
-        (boundingBox.width * imageWidth).round().clamp(1, imageWidth - x);
-    final int height =
-        (boundingBox.height * imageHeight).round().clamp(1, imageHeight - y);
+    // ML Kit provides absolute coordinates already, not normalized
+    // The boundingBox.left, top, width, height are already in the image's coordinate system
+
+    // Add padding around the bounding box to ensure we capture the entire face
+    // This helps with cases where the bounding box is too tight
+    const double paddingPercent = 0.15; // 15% padding
+
+    final int x = (boundingBox.left - boundingBox.width * paddingPercent)
+        .round()
+        .clamp(0, imageWidth - 1);
+    final int y = (boundingBox.top - boundingBox.height * paddingPercent)
+        .round()
+        .clamp(0, imageHeight - 1);
+    final int width = (boundingBox.width * (1 + 2 * paddingPercent))
+        .round()
+        .clamp(1, imageWidth - x);
+    final int height = (boundingBox.height * (1 + 2 * paddingPercent))
+        .round()
+        .clamp(1, imageHeight - y);
 
     // Validate crop coordinates before cropping
     if (x < 0 || y < 0 || x + width > imageWidth || y + height > imageHeight) {
@@ -204,6 +212,7 @@ class FaceRecognitionModel extends ChangeNotifier {
       throw Exception("Failed to crop face region: ${e.toString()}");
     }
 
+    // img.copyCrop won't return null, but we'll keep this check for safety
     if (faceImage == null) {
       throw Exception("Failed to crop face from image");
     }
@@ -239,7 +248,7 @@ class FaceRecognitionModel extends ChangeNotifier {
 
   // Helper method to save cropped face image
   Future<File> _saveCroppedFaceImage(img.Image faceImage) async {
-    final directory = await getTemporaryDirectory();
+    final directory = await getApplicationDocumentsDirectory();
     final String fileName =
         'cropped_face_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final File file = File('${directory.path}/$fileName');
@@ -247,6 +256,7 @@ class FaceRecognitionModel extends ChangeNotifier {
     // Convert image to bytes and save
     final Uint8List imageBytes = img.encodeJpg(faceImage, quality: 90);
     await file.writeAsBytes(imageBytes);
+    log("Saved cropped face to: ${file.path}");
 
     return file;
   }
@@ -267,9 +277,6 @@ class FaceRecognitionModel extends ChangeNotifier {
 
   Future<Float32List?> runModel(Float32List inputImage) async {
     try {
-      _interpreter?.close();
-      _interpreter = await Interpreter.fromAsset(modelName);
-
       if (_interpreter == null) {
         return null;
       }
@@ -279,6 +286,14 @@ class FaceRecognitionModel extends ChangeNotifier {
       Float32List outputList =
           Float32List.fromList(output.expand<double>((e) => e).toList());
       Float32List normalizedOutput = normalizeEmbedding(outputList);
+      
+      // Log embedding results
+      log("Face embedding generated successfully");
+      log("Embedding length: ${normalizedOutput.length}");
+      log("First 10 values: ${normalizedOutput.take(10).join(", ")}");
+      log("Last 10 values: ${normalizedOutput.skip(normalizedOutput.length - 10).join(", ")}");
+      log("Embedding norm: ${math.sqrt(normalizedOutput.fold(0.0, (sum, val) => sum + val * val))}");
+      
       return normalizedOutput;
     } catch (e, stackTrace) {
       log("Error running model: $e");
