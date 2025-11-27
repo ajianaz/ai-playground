@@ -94,6 +94,15 @@ class FaceRecognitionModel extends ChangeNotifier {
             await preprocessImageWithFaceCrop(imageFile);
         final Float32List? outputVector = await runModel(processedImage);
         if (outputVector != null) {
+          // Log embedding data before saving to database
+          log("=== SAVING EMBEDDING TO DATABASE ===");
+          log("Name: $name");
+          log("Embedding length: ${outputVector.length}");
+          log("First 10 values: ${outputVector.take(10).join(", ")}");
+          log("Last 10 values: ${outputVector.skip(outputVector.length - 10).join(", ")}");
+          log("Embedding norm: ${math.sqrt(outputVector.fold(0.0, (sum, val) => sum + val * val))}");
+          log("=====================================");
+          
           FaceModel faceModel = FaceModel(name: name, faceData: outputVector);
           await sqliteHelper.add(faceModel);
           knownFaces.add(faceModel);
@@ -130,7 +139,18 @@ class FaceRecognitionModel extends ChangeNotifier {
             await preprocessImageWithFaceCrop(imageFile);
         final Float32List? outputVector = await runModel(processedImage);
         if (outputVector != null) {
+          // Log embedding data for recognition
+          log("=== FACE RECOGNITION PROCESS ===");
+          log("Embedding length: ${outputVector.length}");
+          log("First 10 values: ${outputVector.take(10).join(", ")}");
+          log("Last 10 values: ${outputVector.skip(outputVector.length - 10).join(", ")}");
+          log("Embedding norm: ${math.sqrt(outputVector.fold(0.0, (sum, val) => sum + val * val))}");
+          log("Known faces count: ${knownFaces.length}");
+          
           personDetected = recognizeFace(outputVector, knownFaces, threshold);
+          log("Recognition result: $personDetected");
+          log("===============================");
+          
           notifyListeners();
         }
       } else {
@@ -315,13 +335,24 @@ class FaceRecognitionModel extends ChangeNotifier {
     String recognizedLabel = "Unknown";
     double minDistance = double.infinity;
 
+    log("=== COMPARING WITH KNOWN FACES ===");
+    log("Threshold: $threshold");
+    
     for (FaceModel faceModel in knownFaces) {
       double distance = euclideanDistance(newFaceVector, faceModel.faceData!);
+      log("Comparing with ${faceModel.name}: distance = $distance");
+      
       if (distance < minDistance && distance < threshold) {
         minDistance = distance;
         recognizedLabel = faceModel.name!;
+        log("New best match: ${faceModel.name} with distance $distance");
       }
     }
+    
+    log("Final result: $recognizedLabel");
+    log("Min distance: $minDistance");
+    log("================================");
+    
     return recognizedLabel;
   }
 
